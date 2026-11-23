@@ -10,10 +10,12 @@ reserved = {
     'IF' : 'IF',
     'THEN' : 'THEN',
     'ELSE' : 'ELSE',
+    'ELSEIF' : 'ELSEIF',
     'ENDIF' : 'ENDIF',
     'DO' : 'DO',
     'CONTINUE' : 'CONTINUE',
     'GOTO' : 'GOTO',
+    'GO' : 'GO',            # para 'GO TO 10' (o TO e um ID; o parser verifica que vale 'TO')
     'READ' : 'READ',
     'PRINT' : 'PRINT',
     'FUNCTION' : 'FUNCTION',
@@ -108,25 +110,39 @@ def t_STRING(t):
 # So encaixa se o t_STRING falhar: aspa sem a aspa final na mesma linha
 def t_STRING_ABERTA(t):
     r"'[^\n]*"
-    print(f"Erro lexico na linha {t.lexer.lineno}: string nao fechada {t.value}")
+    erro_lexico(t, f"string nao fechada {t.value}")
 
 t_ignore = ' \t'
 
 # t_ANY_error em vez de t_error, para valer tambem no estado 'comentario'
 def t_ANY_error(t):
-    print(f"Erro lexico na linha {t.lexer.lineno}: caracter ilegal '{t.value[0]}'")
+    erro_lexico(t, f"caracter ilegal '{t.value[0]}'")
     t.lexer.skip(1)
 
-lexer = lex.lex()
+# Os erros ficam guardados em lexer.erros, para o compilador saber que os houve
+# e nao gerar o .vm. Continuamos a analise para mostrar todos os erros de uma vez.
+def erro_lexico(t, mensagem):
+    texto = f"Erro lexico na linha {t.lexer.lineno}: {mensagem}"
+    t.lexer.erros.append(texto)
+    print(texto)
 
-# Usar sempre esta funcao em vez de lexer.input(codigo)
-def tokenizar(codigo):
+lexer = lex.lex()
+lexer.erros = []
+
+# Prepara o lexer para um novo programa. O parser tambem deve usar esta funcao:
+#   preparar(codigo); parser.parse(lexer=lexer)
+def preparar(codigo):
     if not codigo.endswith('\n'):  # garante que a ultima linha termina em \n
         codigo += '\n'
+    lexer.erros = []               # limpa os erros de um programa anterior
     lexer.lineno = 0               # compensa o \n extra do inicio
     lexer.begin('INITIAL')
     lexer.input('\n' + codigo)     # o \n inicial deixa a 1a linha ser comentario
-    return list(lexer)
+    return lexer
+
+# Devolve a lista de tokens (util para testar o lexer sozinho)
+def tokenizar(codigo):
+    return list(preparar(codigo))
 
 
 # Teste: só corre quando executamos este ficheiro diretamente
@@ -144,3 +160,4 @@ STOP
 END"""
     for tok in tokenizar(codigo):
         print(tok)
+    print(f"{len(lexer.erros)} erro(s) lexico(s)")
