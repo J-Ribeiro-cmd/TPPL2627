@@ -1,9 +1,9 @@
 import ply.lex as lex
-import re
 
 reserved = {
     'PROGRAM' : 'PROGRAM',
     'END' : 'END',
+    'STOP' : 'STOP',
     'INTEGER' : 'INTEGER',
     'REAL' : 'REAL',
     'LOGICAL' : 'LOGICAL',
@@ -17,13 +17,13 @@ reserved = {
     'READ' : 'READ',
     'PRINT' : 'PRINT',
     'FUNCTION' : 'FUNCTION',
-    'SUBROUTINE' :'SUBROUTINE',
+    'SUBROUTINE' : 'SUBROUTINE',
     'CALL' : 'CALL',
     'RETURN' : 'RETURN',
 }
 
 tokens = ['ID', 'NEWLINE',
-    'INT', 'REALNUM', 'STRING',
+    'INT', 'LABEL', 'REALNUM', 'STRING',
     'TRUE', 'FALSE', 'EQ', 'NE',
     'LT', 'LE', 'GT', 'GE', 'AND',
     'OR', 'NOT', 'POW'
@@ -52,13 +52,13 @@ t_NOT = r'\.[Nn][Oo][Tt]\.'
 
 t_POW = r'\*\*'
 
-t_ignore_COMMENT = r'![^\n]*'      # comentario ! em qualquer posicao, ate ao fim da linha
+t_ignore_COMMENT = r'![^\n]*'      # ! em qualquer posicao, ate ao fim da linha
 
-# Tem de ser a PRIMEIRA funcao (o ply testa as funcoes pela ordem do ficheiro)
-# Formato livre: linha cujo primeiro caracter nao branco e C, c ou *, seguido de espaco/fim de linha.
+# Tem de ser a PRIMEIRA funcao (o ply testa as funcoes pela ordem do ficheiro).
+# Comentario: linha cujo primeiro caracter nao branco e '*', ou C/c seguido de espaco.
 # Excecao: 'C = ...' e 'C(...)' sao instrucoes (variavel ou array chamado C).
 def t_INICIO_COMENTARIO(t):
-    r'\n+[ \t]*([Cc](?![ \t]*[=(])|\*)(?=[ \t\n])'
+    r'\n+[ \t]*(\*|[Cc](?![ \t]*[=(])(?=[ \t\n]))'
     t.lexer.lineno += t.value.count('\n')
     t.lexer.begin('comentario')
 
@@ -68,14 +68,14 @@ def t_comentario_FIM(t):
 
 def t_comentario_TEXTO(t):
     r'[^\n]+'
-    pass                           # descarta o texto do comentario
+    pass
 
 t_comentario_ignore = ''
 
 def t_ID(t):
     r'[A-Za-z][A-Za-z0-9_]*'
     t.value = t.value.upper()
-    t.type = reserved.get(t.value,'ID')
+    t.type = reserved.get(t.value, 'ID')
     return t
 
 def t_NEWLINE(t):
@@ -83,53 +83,64 @@ def t_NEWLINE(t):
     t.lexer.lineno += len(t.value)
     return t
 
+# Tem de vir antes do t_INT. Aceita 3.14, 3., .5, 1.0E-3 e 2E5,
+# mas nao parte o 1.EQ.2 (o ponto nao pode ser seguido de letras e outro ponto).
 def t_REALNUM(t):
-    r'\d+\.\d+'
+    r'(\d+\.(?![A-Za-z]+\.)\d*|\.\d+)([Ee][+-]?\d+)?|\d+[Ee][+-]?\d+'
     t.value = float(t.value)
     return t
 
+# Um inteiro que e a primeira coisa da linha e um LABEL (ex: 10 CONTINUE).
 def t_INT(t):
     r'\d+'
+    inicio_linha = t.lexer.lexdata.rfind('\n', 0, t.lexpos) + 1
+    if t.lexer.lexdata[inicio_linha:t.lexpos].strip() == '':
+        t.type = 'LABEL'
     t.value = int(t.value)
     return t
 
+# '' dentro da string representa uma aspa: 'It''s' -> It's
 def t_STRING(t):
-    r"'[^'\n]*'"
-    t.value = t.value[1:-1]
+    r"'([^'\n]|'')*'"
+    t.value = t.value[1:-1].replace("''", "'")
     return t
 
+# So encaixa se o t_STRING falhar: aspa sem a aspa final na mesma linha
+def t_STRING_ABERTA(t):
+    r"'[^\n]*"
+    print(f"Erro lexico na linha {t.lexer.lineno}: string nao fechada {t.value}")
 
 t_ignore = ' \t'
 
 # t_ANY_error em vez de t_error, para valer tambem no estado 'comentario'
 def t_ANY_error(t):
-    print(f"illegal character {t.value[0]} na linha {t.lexer.lineno}")
+    print(f"Erro lexico na linha {t.lexer.lineno}: caracter ilegal '{t.value[0]}'")
     t.lexer.skip(1)
 
 lexer = lex.lex()
 
 # Usar sempre esta funcao em vez de lexer.input(codigo)
-# O '\n' inicial deixa a 1a linha ser comentario; lineno = 0 compensa esse '\n' extra
 def tokenizar(codigo):
-    lexer.lineno = 0
+    if not codigo.endswith('\n'):  # garante que a ultima linha termina em \n
+        codigo += '\n'
+    lexer.lineno = 0               # compensa o \n extra do inicio
     lexer.begin('INITIAL')
-    lexer.input('\n' + codigo)
+    lexer.input('\n' + codigo)     # o \n inicial deixa a 1a linha ser comentario
     return list(lexer)
+
 
 # Teste: só corre quando executamos este ficheiro diretamente
 if __name__ == '__main__':
-    codigo = """C Exemplo com comentarios
-PROGRAM TESTE
-INTEGER FAT, N, C
-
-* outro comentario, depois de uma linha em branco
-   c comentario indentado
-FAT = 1
+    codigo = """C comentario na primeira linha
+* comentario com asterisco
+X = 3.14 + 3. + 1.0E-3 + 2E5
+IF (N.EQ.2 .AND. 1.EQ.N) GOTO 10
+PRINT *, 'It''s', 'abc
+   10 CONTINUE
+DO 20 I = 1, N
+Y = 1 @ 2
 C = 2
-CALL TROCA(FAT, N)
-PRINT *, 'Ola ! Mundo', FAT   ! comentario no fim da linha
-10 CONTINUE
-END
-"""
+STOP
+END"""
     for tok in tokenizar(codigo):
         print(tok)
