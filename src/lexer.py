@@ -130,19 +130,39 @@ lexer = lex.lex()
 lexer.erros = []
 
 # Prepara o lexer para um novo programa. O parser tambem deve usar esta funcao:
-#   preparar(codigo); parser.parse(lexer=lexer)
+#   preparar(codigo); parser.parse(lexer=lexer, tokenfunc=proximo_token)
 def preparar(codigo):
     if not codigo.endswith('\n'):  # garante que a ultima linha termina em \n
         codigo += '\n'
     lexer.erros = []               # limpa os erros de um programa anterior
+    lexer.ultimo_tipo = None       # ainda nao foi devolvido nenhum token
     lexer.lineno = 0               # compensa o \n extra do inicio
     lexer.begin('INITIAL')
     lexer.input('\n' + codigo)     # o \n inicial deixa a 1a linha ser comentario
     return lexer
 
+# Devolve o proximo token, deitando fora os NEWLINE que nao terminam uma instrucao:
+#  - os do inicio do ficheiro (o \n do preparar(), linhas em branco, comentarios);
+#  - os repetidos (linhas em branco, mesmo com espacos, entre duas instrucoes).
+# Assim o parser recebe exatamente um NEWLINE no fim de cada instrucao.
+# O parser deve usar: parser.parse(lexer=lexer, tokenfunc=proximo_token)
+def proximo_token():
+    tok = lexer.token()
+    while tok is not None and tok.type == 'NEWLINE' and lexer.ultimo_tipo in (None, 'NEWLINE'):
+        tok = lexer.token()
+    if tok is not None:
+        lexer.ultimo_tipo = tok.type
+    return tok
+
 # Devolve a lista de tokens (util para testar o lexer sozinho)
 def tokenizar(codigo):
-    return list(preparar(codigo))
+    preparar(codigo)
+    resultado = []
+    tok = proximo_token()
+    while tok is not None:
+        resultado.append(tok)
+        tok = proximo_token()
+    return resultado
 
 
 # Teste: só corre quando executamos este ficheiro diretamente
